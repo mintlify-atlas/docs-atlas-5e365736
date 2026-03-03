@@ -1,0 +1,186 @@
+---
+title: AudioDataset
+description: PyTorch dataset for Soprano training data
+---
+
+## Overview
+
+The `AudioDataset` class loads preprocessed audio-text pairs from JSON files and formats them for training. It implements PyTorch's `Dataset` interface for use with `DataLoader`.
+
+## Class: AudioDataset
+
+### Initialization
+
+```python
+AudioDataset(path)
+```
+
+<ParamField path="path" type="str">
+  Path to JSON file containing the dataset (e.g., `train.json` or `val.json`)
+</ParamField>
+
+### Attributes
+
+<ParamField path="dataset" type="list">
+  Loaded dataset as a list of `[text, audio_tokens]` pairs
+</ParamField>
+
+## Methods
+
+### __len__()
+
+```python
+def __len__(self) -> int:
+```
+
+Returns the number of samples in the dataset.
+
+<ResponseField name="length" type="int">
+  Total number of text-audio pairs
+</ResponseField>
+
+### __getitem__()
+
+```python
+def __getitem__(self, idx: int) -> str:
+```
+
+Returns a formatted string for the sample at index `idx`.
+
+<ParamField path="idx" type="int">
+  Index of the sample to retrieve (0 to len-1)
+</ParamField>
+
+<ResponseField name="formatted_string" type="str">
+  Formatted string following the pattern: `[STOP][TEXT]<transcript>[START]<tokens>[STOP]`
+</ResponseField>
+
+## Data format
+
+The dataset uses a specific token format for training:
+
+```
+[STOP][TEXT]<text transcript>[START]<audio token sequence>[STOP]
+```
+
+### Format breakdown
+
+- `[STOP]` - Start delimiter token
+- `[TEXT]` - Indicates text section begins
+- `<transcript>` - Raw text transcript (e.g., "Hello world")
+- `[START]` - Delimiter between text and audio
+- `<tokens>` - Audio tokens as `[245][1203][678]...` (each in brackets)
+- `[STOP]` - End delimiter token
+
+### Example
+
+For input:
+```python
+text = "Printing, in the only sense"
+audio_tokens = [245, 1203, 678, 3421]
+```
+
+Output string:
+```
+[STOP][TEXT]Printing, in the only sense[START][245][1203][678][3421][STOP]
+```
+
+## JSON file format
+
+The input JSON file should be a list of `[transcript, tokens]` pairs:
+
+```json
+[
+  [
+    "First transcript text",
+    [245, 1203, 678, 3421, 892]
+  ],
+  [
+    "Second transcript text",
+    [156, 2341, 445, 1209, 334]
+  ]
+]
+```
+
+This format is produced by `generate_dataset.py`.
+
+## Usage example
+
+### Basic usage
+
+```python
+from dataset import AudioDataset
+from torch.utils.data import DataLoader
+
+# Load dataset
+dataset = AudioDataset('path/to/train.json')
+
+print(f"Dataset size: {len(dataset)}")
+
+# Get a sample
+sample = dataset[0]
+print(sample)
+# Output: [STOP][TEXT]Hello world[START][245][1203][678][STOP]
+```
+
+### With DataLoader
+
+```python
+from torch.utils.data import DataLoader
+
+# Create dataloader
+dataloader = DataLoader(
+    dataset,
+    batch_size=16,
+    shuffle=True,
+    num_workers=4,
+)
+
+# Iterate through batches
+for batch in dataloader:
+    # batch is a list of formatted strings
+    print(len(batch))  # 16
+    print(batch[0])    # [STOP][TEXT]...[START]...[STOP]
+```
+
+### With custom collate function (as in training)
+
+The training script uses a custom `collate_pack` function that:
+1. Tokenizes the formatted strings
+2. Packs multiple samples into fixed-length sequences
+3. Creates input-target pairs for language modeling
+
+```python
+from transformers import AutoTokenizer
+
+tokenizer = AutoTokenizer.from_pretrained('ekwek/Soprano-80M')
+
+def collate_pack(texts):
+    # Tokenize all samples
+    tokens_batch = tokenizer(texts, padding=False, truncation=False)
+    
+    # Pack into fixed-length sequences
+    # ... (see train.py for full implementation)
+    
+    return x, y
+
+dataloader = DataLoader(
+    dataset,
+    batch_size=64,
+    collate_fn=collate_pack,
+)
+```
+
+## Token ranges
+
+- **Special tokens**: `[STOP]`, `[TEXT]`, `[START]` (IDs 0-2)
+- **Audio tokens**: `[3]` through `[8003]` (8000 tokens)
+- **Text tokens**: Standard vocabulary for text transcripts
+
+## Implementation notes
+
+- The dataset loads the entire JSON file into memory on initialization
+- Audio tokens are formatted with brackets: `[245][1203][678]`
+- The format string is constructed on-the-fly in `__getitem__`
+- Encoding uses UTF-8 to handle international characters
+- No data augmentation is applied at the dataset level

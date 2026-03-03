@@ -1,0 +1,277 @@
+---
+title: Configuration
+description: Understand and tune training hyperparameters for optimal results
+---
+
+The `train.py` script uses several hyperparameters that control the training process. Understanding these parameters will help you optimize training for your specific dataset and hardware.
+
+## Device and reproducibility
+
+<ParamField path="device" type="string" default="'cuda:0'">
+  The device to use for training.
+  
+  - `'cuda:0'` - First NVIDIA GPU (default)
+  - `'cuda:1'` - Second GPU (for multi-GPU systems)
+  - `'cpu'` - CPU training (very slow, not recommended)
+  
+  The script automatically detects whether you're using CUDA or CPU and adjusts autocast settings accordingly.
+</ParamField>
+
+<ParamField path="seed" type="int" default="1337">
+  Random seed for reproducibility. Set this to the same value to get consistent results across training runs.
+  
+  The seed is applied to:
+  - PyTorch random number generator
+  - CUDA random number generator (if available)
+  - NumPy and Python's random module (via DataLoader workers)
+</ParamField>
+
+## Learning rate parameters
+
+<ParamField path="max_lr" type="float" default="5e-4">
+  Maximum learning rate reached during training.
+  
+  This is the learning rate used during the stable phase. The default value of 0.0005 works well for most datasets, but you may want to:
+  - **Decrease** (e.g., 1e-4) if training is unstable or loss spikes
+  - **Increase** (e.g., 1e-3) if training is progressing too slowly
+</ParamField>
+
+<ParamField path="warmup_ratio" type="float" default="0.1">
+  Fraction of training steps dedicated to warmup.
+  
+  During warmup, the learning rate increases linearly from 0 to `max_lr`. With the default 10,000 max steps:
+  - Warmup lasts 1,000 steps (10%)
+  - Helps stabilize early training
+  - Usually no need to change this value
+</ParamField>
+
+<ParamField path="cooldown_ratio" type="float" default="0.1">
+  Fraction of training steps dedicated to cooldown.
+  
+  During cooldown, the learning rate decreases linearly from `max_lr` to `min_lr`. This helps the model settle into a good solution.
+  - Cooldown lasts 1,000 steps (10%) by default
+  - The middle 80% of training uses constant `max_lr`
+</ParamField>
+
+<ParamField path="min_lr" type="float" default="0.1 * max_lr">
+  Minimum learning rate at the end of cooldown.
+  
+  Set to 10% of `max_lr` by default (5e-5). The learning rate never goes below this value during training.
+</ParamField>
+
+## Batch and sequence parameters
+
+<ParamField path="batch_size" type="int" default="4">
+  Number of sequences processed in each training step.
+  
+  This is the **effective batch size** after sequence packing. Larger batches provide more stable gradients but require more GPU memory.
+  
+  **Memory considerations:**
+  - `batch_size = 4` - Default, works on most GPUs with 8GB+ VRAM
+  - `batch_size = 2` or `1` - Use if encountering OOM errors
+  - `batch_size = 8+` - Use if you have high-end GPUs (24GB+)
+</ParamField>
+
+<ParamField path="grad_accum_steps" type="int" default="1">
+  Number of gradient accumulation steps.
+  
+  Simulates larger batch sizes by accumulating gradients over multiple forward passes before updating weights.
+  
+  **Effective batch size** = `batch_size × grad_accum_steps`
+  
+  Use gradient accumulation to:
+  - Train with larger effective batch sizes on limited GPU memory
+  - Default of 1 means no accumulation (update after every batch)
+  - Set to 2, 4, or higher to simulate larger batches
+</ParamField>
+
+<ParamField path="seq_len" type="int" default="1024">
+  Maximum sequence length in tokens.
+  
+  Audio and text tokens are packed into sequences of this length. Longer sequences:
+  - Capture more context
+  - Require more GPU memory
+  - May slow down training
+  
+  Reduce to 512 or 768 if you're memory-constrained.
+</ParamField>
+
+## Training duration
+
+<ParamField path="max_steps" type="int" default="10000">
+  Total number of training steps.
+  
+  One step = one batch (or one accumulated batch if using gradient accumulation).
+  
+  **Recommendations:**
+  - 10,000 steps (default) is a good starting point
+  - Small datasets (&lt;1 hour audio): May need fewer steps (5,000-8,000)
+  - Large datasets (&gt;10 hours audio): May benefit from more steps (15,000-25,000)
+  - Monitor validation metrics to decide when to stop
+</ParamField>
+
+<ParamField path="val_freq" type="int" default="250">
+  Validation frequency in steps.
+  
+  The model evaluates on the validation set every `val_freq` steps. Set to 0 to disable validation (not recommended).
+  
+  More frequent validation (e.g., 100) gives better monitoring but slightly slows training.
+</ParamField>
+
+## Optimizer parameters
+
+<ParamField path="betas" type="tuple" default="(0.9, 0.95)">
+  AdamW optimizer beta coefficients.
+  
+  These control the exponential decay rates for moment estimates:
+  - First value (0.9): Decay rate for first moment (mean)
+  - Second value (0.95): Decay rate for second moment (variance)
+  
+  The default values are optimized for language modeling and rarely need adjustment.
+</ParamField>
+
+<ParamField path="weight_decay" type="float" default="0.1">
+  L2 regularization strength.
+  
+  Helps prevent overfitting by penalizing large weights. The default 0.1 provides moderate regularization.
+  
+  - **Increase** (e.g., 0.2) if you see signs of overfitting (validation loss increases while training loss decreases)
+  - **Decrease** (e.g., 0.05) if the model seems underfitted
+</ParamField>
+
+## Loss weighting
+
+<ParamField path="text_factor" type="float" default="0.0">
+  Weight for text token loss in the total loss.
+  
+  The total loss is computed as:
+  ```python
+  total_loss = audio_loss + text_factor * text_loss
+  ```
+  
+  Currently set to 0.0, meaning the model only trains on audio tokens. You can increase this to train on text tokens as well, but this is experimental.
+  
+  - `0.0` - Only train on audio (default)
+  - `0.1` - Small text loss contribution
+  - `1.0` - Equal weighting of audio and text
+</ParamField>
+
+## Advanced settings
+
+These are hardcoded in the script but can be modified if needed:
+
+### Gradient clipping
+
+```python
+norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+```
+
+Gradients are clipped to a maximum norm of 1.0. This prevents exploding gradients that can destabilize training.
+
+### DataLoader workers
+
+```python
+num_workers=4  # Training dataloader
+num_workers=1  # Validation dataloader
+```
+
+Number of parallel processes for data loading. Increase if CPU is underutilized, decrease if you're memory-constrained.
+
+### Precision
+
+```python
+with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
+```
+
+Training uses bfloat16 mixed precision for better performance. The model weights are stored in bfloat16 format.
+
+## Tuning for different scenarios
+
+<Tabs>
+
+<Tab title="Small dataset (<1 hour)">
+
+For small datasets, reduce training steps and increase regularization:
+
+```python
+max_steps = 5000  # Fewer steps to avoid overfitting
+weight_decay = 0.15  # Stronger regularization
+val_freq = 100  # More frequent validation checks
+```
+
+</Tab>
+
+<Tab title="Large dataset (>10 hours)">
+
+Large datasets can benefit from longer training and larger batches:
+
+```python
+max_steps = 20000  # More steps to fully utilize data
+batch_size = 8  # Larger batches if GPU allows
+seq_len = 2048  # Longer sequences for more context
+```
+
+</Tab>
+
+<Tab title="Limited GPU memory">
+
+Optimize for memory-constrained environments:
+
+```python
+batch_size = 2  # Smaller batches
+grad_accum_steps = 4  # Accumulate to simulate batch_size=8
+seq_len = 512  # Shorter sequences
+num_workers = 2  # Fewer workers
+```
+
+</Tab>
+
+<Tab title="Fast experimentation">
+
+For quick experiments and debugging:
+
+```python
+max_steps = 1000  # Very short training run
+val_freq = 50  # Frequent validation
+seq_len = 512  # Shorter sequences for speed
+```
+
+</Tab>
+
+</Tabs>
+
+## Monitoring training
+
+Watch these metrics during training to assess progress:
+
+### Audio loss
+
+The primary training objective. Should steadily decrease:
+- Initial loss: Usually 5-7
+- Well-trained model: 1.5-2.5
+- Lower is better, but watch for overfitting
+
+### Accuracy
+
+Token prediction accuracy on audio tokens:
+- Random baseline: ~0.0125% (1/8000 tokens)
+- Good model: 75-85%
+- Excellent model: 85-90%+
+
+### Gradient norm
+
+Should be clipped at 1.0 most of the time:
+- Consistently hitting 1.0: Training is aggressive (good)
+- Much lower than 1.0: May benefit from higher learning rate
+- Spikes above 1.0 early in training are normal
+
+### Training speed
+
+Tokens per second gives you throughput:
+- Should be consistent once warmup completes
+- Large drops may indicate CPU/GPU bottlenecks
+- Typical: 10,000-50,000 tokens/second depending on hardware
+
+## Next steps
+
+With your configuration optimized, review the [Training](/guides/training) guide for execution details, or see [Inference](/guides/inference) to learn how to use your trained model.

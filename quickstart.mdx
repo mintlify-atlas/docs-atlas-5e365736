@@ -1,80 +1,205 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get your first Soprano model training in minutes
 ---
 
-## Get started in three steps
+This guide will walk you through training your first custom Soprano model using the provided example dataset. You'll go from installation to a trained model ready for inference.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+Before you begin, ensure you have:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+- Python 3.8 or later installed
+- CUDA-compatible GPU (recommended for faster training)
+- At least 8GB of GPU memory for training
 
-### Step 2: Deploy your changes
+<Note>
+If you're on Windows, you may need to reinstall PyTorch with CUDA support after installing the requirements.
+</Note>
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+## Installation
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+<Steps>
+  <Step title="Clone the repository">
+    Clone Soprano-Factory from GitHub and navigate to the project directory:
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    ```bash
+    git clone https://github.com/ekwek1/soprano-factory.git
+    cd soprano-factory
+    ```
+  </Step>
 
-### Step 3: Go live
+  <Step title="Install dependencies">
+    Install all required packages using pip:
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+    The requirements include:
+
+    ```txt
+    einops
+    huggingface_hub
+    numpy
+    scipy
+    torch
+    torchaudio
+    tqdm
+    transformers
+    ```
+
+    <Info>
+    On Windows, you may need to reinstall PyTorch to enable CUDA support:
+    ```bash
+    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+    ```
+    </Info>
+  </Step>
+</Steps>
+
+## Prepare your dataset
+
+Soprano-Factory expects datasets in **LJSpeech format**. An example dataset is provided in the `example_dataset` directory.
+
+### Dataset structure
+
+Your dataset should follow this structure:
+
+```
+example_dataset/
+├── metadata.txt
+└── wavs/
+    ├── example1.wav
+    └── example2.wav
+```
+
+### Metadata format
+
+The `metadata.txt` file contains one line per audio file with the format `filename|transcript`:
+
+```txt
+example1|Soprano is an extremely lightweight text to speech model designed to produce highly realistic speech at unprecedented speed.
+example2|Gabagool? Ova here!
+```
+
+<Note>
+WAV files can be in any sample rate - they will be automatically resampled to 32 kHz during preprocessing.
+</Note>
+
+## Train your model
+
+<Steps>
+  <Step title="Preprocess your dataset">
+    Convert your audio files into tokens that Soprano can train on:
+
+    ```bash
+    python generate_dataset.py --input-dir example_dataset
+    ```
+
+    This script will:
+    - Load the Soprano encoder from HuggingFace
+    - Encode all audio files to tokens
+    - Create train/val splits (90/10 ratio, max 512 validation samples)
+    - Save `train.json` and `val.json` in your dataset directory
+
+    <Info>
+    If you omit the `--input-dir` argument, it defaults to `./example_dataset`.
+    </Info>
+  </Step>
+
+  <Step title="Start training">
+    Begin training your custom Soprano model:
+
+    ```bash
+    python train.py --input-dir example_dataset --save-dir ./my_model
+    ```
+
+    The training script will:
+    - Load the base Soprano-80M model from HuggingFace
+    - Train for 10,000 steps with validation every 250 steps
+    - Use AdamW optimizer with warmup and cooldown scheduling
+    - Save the final model to your specified directory
+
+    ### Training hyperparameters
+
+    The default configuration in `train.py` includes:
+
+    ```python
+    max_lr = 5e-4
+    batch_size = 4
+    seq_len = 1024
+    max_steps = 10000
+    val_freq = 250
+    ```
+
+    <Info>
+    Training runs on `cuda:0` by default. The script uses mixed precision (bfloat16) for efficient memory usage.
+    </Info>
+  </Step>
+
+  <Step title="Monitor training progress">
+    During training, you'll see progress updates showing:
+
+    ```
+    text loss: 0.123 | audio loss: 0.456 | acc: 0.8234 | lr: 5.00e-04 | norm: 0.123 | time: 45.67 ms | 9123.45 t/s
+    ```
+
+    Validation metrics are printed every 250 steps:
+
+    ```
+    validation text loss: 0.125 | validation audio loss: 0.458 | validation acc: 0.8201
+    ```
+  </Step>
+</Steps>
+
+## Use your trained model
+
+Once training is complete, you can use your custom model with the main [Soprano repository](https://github.com/ekwek1/soprano).
+
+```python
+from soprano import Soprano
+
+# Load your custom model
+tts = Soprano(model_path="./my_model")
+
+# Generate speech
+audio = tts.generate("Hello from my custom Soprano model!")
+```
+
+<Note>
+Your trained model is fully compatible with all Soprano inference features including WebUI, CLI, and OpenAI-compatible endpoints.
+</Note>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card
+    title="Dataset preparation"
+    icon="database"
+    href="/guides/dataset-preparation"
+  >
+    Learn best practices for preparing high-quality training data
+  </Card>
+  <Card
+    title="Training guide"
+    icon="graduation-cap"
+    href="/guides/training"
+  >
+    Deep dive into hyperparameters and training strategies
+  </Card>
+  <Card
+    title="Configuration"
+    icon="sliders"
+    href="/guides/configuration"
+  >
+    Understand and tune training hyperparameters
+  </Card>
+  <Card
+    title="Main Soprano docs"
+    icon="book"
+    href="https://github.com/ekwek1/soprano"
+  >
+    Explore inference options and deployment strategies
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

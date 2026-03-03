@@ -1,0 +1,129 @@
+---
+title: train.py
+description: Training script for fine-tuning Soprano TTS models
+---
+
+## Overview
+
+The training script fine-tunes Soprano models on custom datasets. It uses a nanoGPT-style training loop with packed sequences, gradient accumulation, and a warmup-stable-decay (WSD) learning rate schedule.
+
+## Command-line arguments
+
+<ParamField path="--input-dir" type="pathlib.Path" default="./example_dataset">
+  Path to directory containing LJSpeech-style dataset with `train.json` and `val.json` files
+</ParamField>
+
+<ParamField path="--save-dir" type="pathlib.Path" required>
+  Path to directory where trained model weights will be saved
+</ParamField>
+
+## Hyperparameters
+
+The following hyperparameters are defined in the script:
+
+<ParamField path="device" type="str" default="cuda:0">
+  Device to run training on
+</ParamField>
+
+<ParamField path="seed" type="int" default="1337">
+  Random seed for reproducibility
+</ParamField>
+
+<ParamField path="max_lr" type="float" default="5e-4">
+  Maximum learning rate during training
+</ParamField>
+
+<ParamField path="min_lr" type="float" default="5e-5">
+  Minimum learning rate (calculated as `0.1 * max_lr`)
+</ParamField>
+
+<ParamField path="warmup_ratio" type="float" default="0.1">
+  Fraction of total steps used for learning rate warmup
+</ParamField>
+
+<ParamField path="cooldown_ratio" type="float" default="0.1">
+  Fraction of total steps used for learning rate cooldown
+</ParamField>
+
+<ParamField path="batch_size" type="int" default="4">
+  Number of packed sequences per batch
+</ParamField>
+
+<ParamField path="grad_accum_steps" type="int" default="1">
+  Number of gradient accumulation steps
+</ParamField>
+
+<ParamField path="seq_len" type="int" default="1024">
+  Sequence length for packed samples
+</ParamField>
+
+<ParamField path="val_freq" type="int" default="250">
+  Validation frequency in training steps
+</ParamField>
+
+<ParamField path="text_factor" type="float" default="0.0">
+  Weight for text token loss (currently set to 0.0, training only on audio tokens)
+</ParamField>
+
+<ParamField path="max_steps" type="int" default="10000">
+  Total number of training steps
+</ParamField>
+
+<ParamField path="betas" type="tuple" default="(0.9, 0.95)">
+  Adam optimizer beta parameters
+</ParamField>
+
+<ParamField path="weight_decay" type="float" default="0.1">
+  Weight decay for AdamW optimizer
+</ParamField>
+
+## Training loop structure
+
+The training loop follows this structure:
+
+1. **Model initialization**: Loads `ekwek/Soprano-80M` pretrained model
+2. **Dataset loading**: Uses `AudioDataset` with custom `collate_pack` function to pack sequences
+3. **Optimizer**: AdamW with fused implementation
+4. **Learning rate schedule**: WSD (Warmup-Stable-Decay)
+   - Warmup: Linear increase from 0 to `max_lr`
+   - Stable: Constant `max_lr`
+   - Decay: Linear decrease from `max_lr` to `min_lr`
+5. **Loss computation**: Separate tracking for audio and text tokens
+   - Audio tokens: IDs 3-8003
+   - Accuracy computed on audio tokens only
+6. **Validation**: Runs every `val_freq` steps
+7. **Gradient clipping**: Clips gradients to norm of 1.0
+
+## Usage examples
+
+### Basic training
+
+```bash
+python train.py --save-dir ./my_model
+```
+
+### Training with custom dataset
+
+```bash
+python train.py --input-dir ./my_dataset --save-dir ./my_model
+```
+
+## Output files
+
+After training completes, the following files are saved to `--save-dir`:
+
+- `config.json` - Model configuration
+- `model.safetensors` - Trained model weights
+- `tokenizer.json` - Tokenizer configuration
+- `tokenizer_config.json` - Additional tokenizer settings
+- `special_tokens_map.json` - Special token mappings
+
+## Loss computation
+
+The script computes two separate losses:
+
+- **Audio loss**: Cross-entropy loss on audio tokens (IDs 3-8003)
+- **Text loss**: Cross-entropy loss on text tokens (all other IDs)
+- **Total loss**: `audio_loss + text_factor * text_loss`
+
+Accuracy is computed only on audio token predictions.

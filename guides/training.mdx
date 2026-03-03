@@ -1,0 +1,247 @@
+---
+title: Training
+description: Train your custom Soprano TTS model with your prepared dataset
+---
+
+Once you've [prepared your dataset](/guides/dataset-preparation), you can train a custom Soprano model using the `train.py` script.
+
+## Basic usage
+
+Run the training script with your dataset directory and desired save location:
+
+```bash
+python train.py --input-dir path/to/your_dataset --save-dir path/to/weights
+```
+
+### Arguments
+
+<ParamField path="--input-dir" type="path" default="./example_dataset">
+  Path to your LJSpeech-format dataset directory. This should contain the `train.json` and `val.json` files generated during dataset preparation.
+</ParamField>
+
+<ParamField path="--save-dir" type="path" required>
+  Path to directory where trained model weights will be saved.
+</ParamField>
+
+## Training configuration
+
+The training script uses the following default hyperparameters:
+
+```python
+device = 'cuda:0'
+seed = 1337
+max_lr = 5e-4
+warmup_ratio = 0.1
+cooldown_ratio = 0.1
+min_lr = 0.1 * max_lr
+batch_size = 4
+grad_accum_steps = 1
+seq_len = 1024
+val_freq = 250
+text_factor = 0.0
+max_steps = 10000
+betas = (0.9, 0.95)
+weight_decay = 0.1
+```
+
+For detailed explanations of each parameter, see the [Configuration](/guides/configuration) guide.
+
+## Learning rate schedule
+
+Training uses a **WSD (Warmup-Stable-Decay)** schedule:
+
+<Steps>
+
+<Step title="Warmup phase">
+
+Linear warmup from 0 to `max_lr` over the first 10% of training steps:
+
+```python
+if it < warmup_steps:
+    return max_lr * (it+1) / warmup_steps
+```
+
+</Step>
+
+<Step title="Stable phase">
+
+Constant learning rate at `max_lr` for the middle 80% of training:
+
+```python
+if it < max_steps - cooldown_steps:
+    return max_lr
+```
+
+</Step>
+
+<Step title="Cooldown phase">
+
+Linear decay from `max_lr` to `min_lr` over the final 10% of steps:
+
+```python
+return min_lr + (max_lr - min_lr) * ((max_steps - it) / cooldown_steps)
+```
+
+</Step>
+
+</Steps>
+
+This schedule helps stabilize training and allows the model to settle into a good solution during the cooldown phase.
+
+## Training progress
+
+During training, you'll see real-time progress output:
+
+```
+text loss: 0.234 | audio loss: 1.567 | acc: 0.8234 | lr: 5.00e-04 | norm: 0.823 | time: 245.32 ms | 16789.45 t/s
+```
+
+### Metrics explained
+
+- **text loss**: Cross-entropy loss on text tokens (currently weighted at 0.0)
+- **audio loss**: Cross-entropy loss on audio tokens (primary training objective)
+- **acc**: Token prediction accuracy on audio tokens
+- **lr**: Current learning rate
+- **norm**: Gradient norm after clipping
+- **time**: Time per training step in milliseconds
+- **t/s**: Tokens processed per second
+
+### Validation
+
+Every 250 steps (configurable via `val_freq`), the script evaluates on the validation set:
+
+```
+validation text loss: 0.2156    validation audio loss: 1.4523    validation acc: 0.8456
+```
+
+Watch for the validation loss to decrease and accuracy to increase. If validation metrics stop improving while training metrics continue to improve, you may be overfitting.
+
+## Gradient accumulation and clipping
+
+The training script includes two important optimization techniques:
+
+### Gradient accumulation
+
+```python
+for micro_step in range(grad_accum_steps):
+    # Forward and backward pass
+    total_loss.backward()
+```
+
+Gradient accumulation allows you to simulate larger batch sizes by accumulating gradients over multiple forward passes before updating weights. Increase `grad_accum_steps` if you're limited by GPU memory.
+
+### Gradient clipping
+
+```python
+norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+```
+
+Gradients are clipped to a maximum norm of 1.0 to prevent training instability from exploding gradients.
+
+## GPU memory management
+
+<Tabs>
+
+<Tab title="Reduce memory usage">
+
+If you encounter out-of-memory errors:
+
+1. **Decrease batch size**:
+   ```python
+   batch_size = 2  # or even 1
+   ```
+
+2. **Reduce sequence length**:
+   ```python
+   seq_len = 512  # down from 1024
+   ```
+
+3. **Increase gradient accumulation**:
+   ```python
+   grad_accum_steps = 2  # or higher
+   ```
+   This simulates larger batches without increasing memory.
+
+4. **Use fewer DataLoader workers**:
+   ```python
+   num_workers=2  # down from 4
+   ```
+
+</Tab>
+
+<Tab title="Maximize throughput">
+
+If you have GPU memory to spare:
+
+1. **Increase batch size**:
+   ```python
+   batch_size = 8  # or higher
+   ```
+
+2. **Increase sequence length**:
+   ```python
+   seq_len = 2048  # up from 1024
+   ```
+
+3. **Add more DataLoader workers**:
+   ```python
+   num_workers=8  # up from 4
+   ```
+
+</Tab>
+
+<Tab title="CPU training">
+
+To train on CPU (much slower, not recommended):
+
+```python
+device = 'cpu'
+```
+
+You may need to disable some optimizations:
+- Remove `fused=True` from the optimizer
+- Adjust autocast settings for CPU compatibility
+
+</Tab>
+
+</Tabs>
+
+## Training completion
+
+When training finishes, the model and tokenizer are saved to your specified directory:
+
+```
+Training complete. Saving model at path/to/weights
+Saving done.
+```
+
+Your save directory will contain:
+- Model weights (`pytorch_model.bin` or similar)
+- Model configuration (`config.json`)
+- Tokenizer files
+
+## Tips for successful training
+
+<AccordionGroup>
+
+<Accordion title="Monitor validation metrics">
+Regularly check validation loss and accuracy. If they diverge significantly from training metrics, you may be overfitting. Consider reducing training steps or regularization.
+</Accordion>
+
+<Accordion title="Save checkpoints">
+For long training runs, consider modifying the script to save intermediate checkpoints. This allows you to recover from crashes and evaluate different training stages.
+</Accordion>
+
+<Accordion title="Experiment with hyperparameters">
+The default settings work well for many datasets, but you may get better results by tuning parameters. See the [Configuration](/guides/configuration) guide for details.
+</Accordion>
+
+<Accordion title="Dataset quality matters">
+A small, high-quality dataset often outperforms a large, noisy dataset. Ensure your audio recordings are clean and transcripts are accurate.
+</Accordion>
+
+</AccordionGroup>
+
+## Next steps
+
+After training completes, learn how to use your custom model in the [Inference](/guides/inference) guide.

@@ -1,0 +1,146 @@
+---
+title: Inference
+description: Use your trained custom model for text-to-speech generation
+---
+
+After training your custom Soprano model, you'll use the main [Soprano repository](https://github.com/ekwek1/soprano) to perform inference and generate speech.
+
+<Note>
+Inference is **not** performed in Soprano-Factory. The Factory is only for training—generation happens in the main Soprano repo.
+</Note>
+
+## Using custom weights
+
+Once training completes, your model weights are saved to the directory you specified with `--save-dir`. To use these weights with Soprano:
+
+### Install Soprano
+
+First, clone and set up the main Soprano repository:
+
+```bash
+git clone https://github.com/ekwek1/soprano.git
+cd soprano
+pip install -r requirements.txt
+```
+
+### Load your custom model
+
+Pass your saved model directory to Soprano using the `model_path` parameter:
+
+```python
+from soprano import Soprano
+
+# Load your custom trained model
+tts = Soprano(model_path="path/to/your/weights")
+
+# Generate speech
+audio = tts.generate("Your text to synthesize goes here")
+```
+
+The `model_path` parameter tells Soprano to load your custom weights instead of the default pre-trained model.
+
+## What to expect
+
+<Warning>
+Soprano was not originally designed with fine-tuning in mind. Results may vary depending on your dataset quality, size, and training configuration. Experimentation is encouraged.
+</Warning>
+
+Your custom model will have learned the characteristics of your training data:
+
+- **Voice characteristics**: Pitch, timbre, and speaking style from your audio samples
+- **Language patterns**: Pronunciation and prosody specific to your dataset
+- **Audio quality**: The model's output quality will reflect your training data quality
+
+## Soprano capabilities
+
+The main Soprano repository provides rich inference features:
+
+- **Ultra-fast generation**: Up to 2000x realtime on GPU, 20x on CPU
+- **Low latency streaming**: &lt;250ms on CPU, &lt;15ms on GPU
+- **Minimal memory footprint**: &lt;1GB for the 80M parameter model
+- **Multiple interfaces**: WebUI, CLI, and OpenAI-compatible API endpoint
+- **Device flexibility**: Works on CUDA, CPU, and MPS (Apple Silicon)
+
+<CardGroup cols={2}>
+
+<Card title="Soprano Repository" icon="github" href="https://github.com/ekwek1/soprano">
+  Clone the main repo to start generating speech with your custom model
+</Card>
+
+<Card title="Pre-trained Model" icon="huggingface" href="https://huggingface.co/ekwek/Soprano-80M">
+  Compare your results against the base Soprano-80M model
+</Card>
+
+<Card title="Live Demo" icon="play" href="https://huggingface.co/spaces/ekwek/Soprano-TTS">
+  Try the base model in your browser before training custom versions
+</Card>
+
+<Card title="Model Encoder" icon="microchip" href="https://huggingface.co/ekwek/Soprano-Encoder">
+  The encoder used during dataset preparation
+</Card>
+
+</CardGroup>
+
+## Common use cases
+
+### Adding new voices
+
+Train on audio from a specific speaker to create a TTS model with their voice characteristics:
+
+```bash
+# Prepare dataset with single speaker
+python generate_dataset.py --input-dir datasets/speaker_john
+
+# Train custom model
+python train.py --input-dir datasets/speaker_john --save-dir models/john_voice
+```
+
+### Language adaptation
+
+Fine-tune on a different language or dialect:
+
+```bash
+# Train on Spanish dataset
+python train.py --input-dir datasets/spanish_corpus --save-dir models/spanish_soprano
+```
+
+### Style transfer
+
+Train on audio with specific emotional or stylistic characteristics:
+
+```bash
+# Train on dramatic audiobook readings
+python train.py --input-dir datasets/dramatic_readings --save-dir models/dramatic_soprano
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+
+<Accordion title="Poor audio quality">
+If your generated audio has artifacts or sounds unnatural:
+- Ensure training audio was clean and high-quality
+- Verify transcripts exactly matched the spoken audio
+- Try training for more steps or with a larger dataset
+- Check that validation metrics improved during training
+</Accordion>
+
+<Accordion title="Model doesn't sound like training voice">
+The model may need more training data or steps:
+- Aim for at least several hours of audio data
+- Increase `max_steps` beyond the default 10,000
+- Ensure your dataset has consistent audio quality
+</Accordion>
+
+<Accordion title="Inference errors">
+If Soprano fails to load your model:
+- Verify all files were saved correctly in the save directory
+- Check that training completed without errors
+- Ensure you're using compatible versions of Soprano and Soprano-Factory
+</Accordion>
+
+</AccordionGroup>
+
+## Next steps
+
+Explore the [Configuration](/guides/configuration) guide to learn about tuning training hyperparameters for better results, or visit the [Soprano documentation](https://github.com/ekwek1/soprano) for detailed inference instructions.

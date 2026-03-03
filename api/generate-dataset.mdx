@@ -1,0 +1,157 @@
+---
+title: generate_dataset.py
+description: Convert LJSpeech-format datasets into Soprano audio tokens
+---
+
+## Overview
+
+The `generate_dataset.py` script converts audio datasets in LJSpeech format into tokenized audio representations suitable for training Soprano models. It produces `train.json` and `val.json` files containing text-audio token pairs.
+
+## Command-line arguments
+
+<ParamField path="--input-dir" type="pathlib.Path" default="./example_dataset">
+  Path to directory containing LJSpeech-style dataset with:
+  - `metadata.txt` - Pipe-separated file with format `filename|transcript`
+  - `wavs/` - Directory containing WAV audio files
+</ParamField>
+
+## Constants
+
+<ParamField path="SAMPLE_RATE" type="int" default="32000">
+  Target sample rate for audio processing
+</ParamField>
+
+<ParamField path="SEED" type="int" default="42">
+  Random seed for train/val split
+</ParamField>
+
+<ParamField path="VAL_PROP" type="float" default="0.1">
+  Proportion of data to use for validation
+</ParamField>
+
+<ParamField path="VAL_MAX" type="int" default="512">
+  Maximum number of validation samples
+</ParamField>
+
+## Input format requirements
+
+### Directory structure
+
+```
+input-dir/
+├── metadata.txt
+└── wavs/
+    ├── file1.wav
+    ├── file2.wav
+    └── ...
+```
+
+### metadata.txt format
+
+Each line should follow the format:
+
+```
+filename|transcript text
+```
+
+Example:
+
+```
+LJ001-0001|Printing, in the only sense with which we are at present concerned
+LJ001-0002|differs from most if not from all the arts and crafts
+```
+
+## Processing pipeline
+
+1. **Load encoder**: Downloads `ekwek/Soprano-Encoder` from Hugging Face
+2. **Read metadata**: Parses `metadata.txt` to get file-transcript pairs
+3. **Encode audio**: For each audio file:
+   - Load WAV file using `scipy.io.wavfile`
+   - Resample to 32kHz if needed
+   - Convert to audio tokens using the encoder
+4. **Split dataset**: Randomly splits into train/val sets
+5. **Save JSON files**: Writes `train.json` and `val.json`
+
+## Output files
+
+### train.json and val.json
+
+Both files contain a JSON array of `[transcript, tokens]` pairs:
+
+```json
+[
+  [
+    "Printing, in the only sense with which we are at present concerned",
+    [245, 1203, 678, 3421, 892, ...]
+  ],
+  [
+    "differs from most if not from all the arts and crafts",
+    [156, 2341, 445, 1209, 334, ...]
+  ]
+]
+```
+
+<ResponseField name="transcript" type="string">
+  The text transcript from metadata.txt
+</ResponseField>
+
+<ResponseField name="tokens" type="list[int]">
+  Integer audio token IDs produced by the encoder (range: 3-8003)
+</ResponseField>
+
+## Data format transformation
+
+The script transforms data as follows:
+
+```
+Input:  filename.wav + "transcript text"
+         ↓
+      Resample to 32kHz
+         ↓
+      Mel spectrogram (50 bins)
+         ↓
+      Encoder (8-layer ConvNeXt)
+         ↓
+      FSQ quantization
+         ↓
+Output: ["transcript text", [245, 1203, 678, ...]]
+```
+
+## Usage examples
+
+### Process default dataset
+
+```bash
+python generate_dataset.py
+```
+
+### Process custom dataset
+
+```bash
+python generate_dataset.py --input-dir ./my_ljspeech_dataset
+```
+
+## Output example
+
+When running the script, you'll see:
+
+```
+Loading model.
+Model loaded.
+Reading metadata.
+13100 samples located in directory.
+Encoding audio.
+100%|████████████| 13100/13100 [05:23<00:00, 40.45it/s]
+Generating train/test splits.
+# train samples: 12588
+# val samples: 512
+Saving datasets.
+Datasets saved.
+```
+
+## Notes
+
+- Audio files are automatically resampled to 32kHz if they don't match
+- The encoder runs in inference mode (no gradients)
+- Validation set is capped at 512 samples regardless of dataset size
+- The random seed ensures reproducible train/val splits

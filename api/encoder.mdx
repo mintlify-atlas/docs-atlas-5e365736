@@ -1,0 +1,225 @@
+---
+title: Encoder
+description: Audio encoder with FSQ quantization for Soprano TTS
+---
+
+## Overview
+
+The `Encoder` class converts raw audio waveforms into discrete token sequences using mel spectrograms, a ConvNeXt-based backbone (VocosBackbone), and Finite Scalar Quantization (FSQ).
+
+## Class: Encoder
+
+### Initialization
+
+```python
+Encoder(
+    num_input_mels=50,
+    mel_hop_length=512,
+    mel_hop_scale=0.25,
+    encoder_num_layers=8,
+    encoder_dim=768,
+    encoder_intermediate_dim=None,
+    fsq_levels=[8, 8, 5, 5, 5],
+    dw_kernel=5,
+)
+```
+
+#### Parameters
+
+<ParamField path="num_input_mels" type="int" default="50">
+  Number of mel spectrogram bins
+</ParamField>
+
+<ParamField path="mel_hop_length" type="int" default="512">
+  Hop length for mel spectrogram computation (in samples)
+</ParamField>
+
+<ParamField path="mel_hop_scale" type="float" default="0.25">
+  Scale factor to compute FFT size: `n_fft = mel_hop_length / mel_hop_scale`
+</ParamField>
+
+<ParamField path="encoder_num_layers" type="int" default="8">
+  Number of ConvNeXt blocks in the encoder backbone
+</ParamField>
+
+<ParamField path="encoder_dim" type="int" default="768">
+  Hidden dimension of the encoder
+</ParamField>
+
+<ParamField path="encoder_intermediate_dim" type="int" default="None">
+  Intermediate dimension in ConvNeXt blocks. If None, defaults to `encoder_dim * 3`
+</ParamField>
+
+<ParamField path="fsq_levels" type="list[int]" default="[8, 8, 5, 5, 5]">
+  FSQ quantization levels for each dimension. Codebook size = product of levels (8000)
+</ParamField>
+
+<ParamField path="dw_kernel" type="int" default="5">
+  Kernel size for depthwise convolutions in ConvNeXt blocks
+</ParamField>
+
+### Methods
+
+#### encode()
+
+```python
+def encode(self, x: torch.Tensor) -> torch.Tensor:
+```
+
+Encodes mel spectrogram features to quantized representations.
+
+<ParamField path="x" type="torch.Tensor">
+  Mel spectrogram tensor of shape `(B, C, T)` where B is batch size, C is number of mel bins, T is time steps
+</ParamField>
+
+<ResponseField name="output" type="torch.Tensor">
+  Quantized tensor of shape `(B, T', 5)` where T' is downsampled time dimension
+</ResponseField>
+
+**Process:**
+1. Pass through VocosBackbone encoder
+2. Downsample by factor of 4 (2048 / 512)
+3. Project to 5 dimensions (bottleneck)
+4. Apply FSQ quantization
+
+#### preprocess()
+
+```python
+def preprocess(self, audio: torch.Tensor) -> torch.Tensor:
+```
+
+Preprocesses input audio into mel spectrogram.
+
+<ParamField path="audio" type="torch.Tensor">
+  Input tensor:
+  - 2D `(B, T)`: Raw audio waveform
+  - 3D `(B, C, T)`: Already computed mel spectrogram
+</ParamField>
+
+<ResponseField name="output" type="torch.Tensor">
+  Log mel spectrogram of shape `(B, num_input_mels, T')`
+</ResponseField>
+
+**Process:**
+- If 2D input: Compute mel spectrogram with log scaling
+- If 3D input: Return as-is (assumed to be pre-computed mel spectrogram)
+
+#### forward()
+
+```python
+def forward(self, audio: torch.Tensor) -> torch.Tensor:
+```
+
+Complete pipeline from audio to discrete token indices.
+
+<ParamField path="audio" type="torch.Tensor">
+  Raw audio waveform of shape `(B, T)` sampled at 32kHz
+</ParamField>
+
+<ResponseField name="codes" type="torch.Tensor">
+  Discrete token indices of shape `(B, T')` with integer values in range [3, 8003]
+</ResponseField>
+
+**Process:**
+1. Preprocess audio to mel spectrogram
+2. Encode to quantized representation
+3. Convert to codebook indices
+
+## VocosBackbone
+
+The encoder uses a VocosBackbone architecture built with ConvNeXt blocks.
+
+### Architecture
+
+```python
+VocosBackbone(
+    input_channels: int,
+    dim: int,
+    intermediate_dim: int,
+    num_layers: int,
+    input_kernel_size: int = 7,
+    dw_kernel_size: int = 7,
+    layer_scale_init_value: Optional[float] = None,
+    pad: str = 'zeros',
+)
+```
+
+#### Parameters
+
+<ParamField path="input_channels" type="int">
+  Number of input feature channels (mel bins)
+</ParamField>
+
+<ParamField path="dim" type="int">
+  Hidden dimension throughout the network
+</ParamField>
+
+<ParamField path="intermediate_dim" type="int">
+  Intermediate dimension in ConvNeXt MLP blocks
+</ParamField>
+
+<ParamField path="num_layers" type="int">
+  Number of ConvNeXt blocks to stack
+</ParamField>
+
+<ParamField path="input_kernel_size" type="int" default="7">
+  Kernel size for initial embedding convolution
+</ParamField>
+
+<ParamField path="dw_kernel_size" type="int" default="7">
+  Kernel size for depthwise convolutions in ConvNeXt blocks
+</ParamField>
+
+<ParamField path="layer_scale_init_value" type="Optional[float]" default="None">
+  Initial value for layer scaling. If None, computed as `1 / sqrt(num_layers)`
+</ParamField>
+
+<ParamField path="pad" type="str" default="zeros">
+  Padding mode for convolutions
+</ParamField>
+
+### forward()
+
+```python
+def forward(self, x: torch.Tensor) -> torch.Tensor:
+```
+
+<ParamField path="x" type="torch.Tensor">
+  Input tensor of shape `(B, C, L)` where C is input channels, L is sequence length
+</ParamField>
+
+<ResponseField name="output" type="torch.Tensor">
+  Output tensor of shape `(B, dim, L)`
+</ResponseField>
+
+## Usage example
+
+```python
+import torch
+from encoder.codec import Encoder
+
+# Initialize encoder
+encoder = Encoder()
+
+# Load pretrained weights
+from huggingface_hub import hf_hub_download
+encoder_path = hf_hub_download(repo_id='ekwek/Soprano-Encoder', filename='encoder.pth')
+encoder.load_state_dict(torch.load(encoder_path))
+encoder.eval()
+
+# Encode audio
+audio = torch.randn(1, 32000)  # 1 second at 32kHz
+with torch.no_grad():
+    tokens = encoder(audio)
+    
+print(tokens.shape)  # (1, 15) - approximately 15 tokens per second
+print(tokens.min(), tokens.max())  # Range: [3, 8003]
+```
+
+## Implementation notes
+
+- The encoder downsamples audio by a factor of ~2133 (32000 Hz → ~15 tokens/sec)
+- Mel spectrogram uses power=1 (magnitude spectrum, not power spectrum)
+- Log scaling with clipping at 5e-3 to avoid log(0)
+- FSQ provides 8000 possible codes (8×8×5×5×5)
+- Token IDs are offset by 3, giving range [3, 8003]

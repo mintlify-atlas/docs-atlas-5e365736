@@ -1,0 +1,148 @@
+---
+title: Dataset preparation
+description: Learn how to prepare your audio dataset for training custom TTS models
+---
+
+Before you can train a custom Soprano model, you need to prepare your audio dataset in the correct format and convert it into audio tokens.
+
+## Dataset format requirements
+
+Soprano-Factory expects your dataset in **LJSpeech format**, which consists of:
+
+- A `wavs/` directory containing all audio files
+- A `metadata.txt` file mapping filenames to transcripts
+
+Your audio files can be in any sample rate—they will be automatically resampled to 32 kHz during processing.
+
+### Directory structure
+
+Here's the expected structure for your dataset:
+
+```
+your_dataset/
+├── wavs/
+│   ├── sample1.wav
+│   ├── sample2.wav
+│   └── ...
+└── metadata.txt
+```
+
+### Metadata file format
+
+The `metadata.txt` file uses a pipe-delimited format with one sample per line:
+
+```
+filename|transcript text
+```
+
+<Note>
+Do not include the `.wav` extension in the filename column.
+</Note>
+
+Here's a real example from the provided sample dataset:
+
+```
+example1|Soprano is an extremely lightweight text to speech model designed to produce highly realistic speech at unprecedented speed.
+example2|Gabagool? Ova here!
+```
+
+## Audio tokenization process
+
+<Steps>
+
+<Step title="Run the dataset generation script">
+
+Execute `generate_dataset.py` to convert your audio files into tokens:
+
+```bash
+python generate_dataset.py --input-dir path/to/your_dataset
+```
+
+If you omit the `--input-dir` argument, it defaults to the provided `example_dataset`.
+
+</Step>
+
+<Step title="Audio encoding">
+
+The script performs the following operations:
+
+1. Loads the Soprano encoder model from HuggingFace (`ekwek/Soprano-Encoder`)
+2. Reads your `metadata.txt` file to locate all samples
+3. Processes each audio file:
+   - Resamples to 32 kHz if needed
+   - Converts audio to token representation using the encoder
+4. Pairs each transcript with its corresponding audio tokens
+
+</Step>
+
+<Step title="Train/validation split generation">
+
+The script automatically splits your dataset:
+
+- **Validation set**: 10% of samples (maximum 512 samples)
+- **Training set**: Remaining samples
+- Random seed: 42 (for reproducibility)
+
+The split statistics are displayed after processing:
+
+```
+# train samples: 450
+# val samples: 50
+```
+
+</Step>
+
+<Step title="Output files">
+
+Two JSON files are created in your input directory:
+
+- `train.json` - Training dataset with tokenized audio
+- `val.json` - Validation dataset with tokenized audio
+
+Each JSON file contains an array of `[transcript, audio_tokens]` pairs.
+
+</Step>
+
+</Steps>
+
+## What happens during encoding
+
+The encoding process converts your raw audio waveforms into discrete tokens that the Soprano model can learn from. Here's the core processing pipeline:
+
+```python
+sr, audio = wavfile.read(f'{input_dir}/wavs/{filename}.wav')
+audio = torch.from_numpy(audio)
+if sr != SAMPLE_RATE:
+    audio = torchaudio.functional.resample(audio, sr, SAMPLE_RATE)
+audio = audio.unsqueeze(0)
+with torch.no_grad():
+    audio_tokens = encoder(audio)
+```
+
+The encoder outputs a compressed representation of your audio that preserves the characteristics needed for high-quality TTS generation.
+
+## Best practices
+
+<CardGroup cols={2}>
+
+<Card title="Audio quality" icon="microphone">
+Use clean, high-quality recordings with minimal background noise for best results.
+</Card>
+
+<Card title="Dataset size" icon="database">
+Larger datasets generally produce better models, but you can experiment with smaller datasets for specific voices or styles.
+</Card>
+
+<Card title="Consistent format" icon="waveform">
+Ensure all audio files have consistent quality and recording conditions across your dataset.
+</Card>
+
+<Card title="Transcript accuracy" icon="spell-check">
+Double-check that transcripts exactly match the spoken audio for optimal training.
+</Card>
+
+</CardGroup>
+
+## Next steps
+
+Once you've generated your `train.json` and `val.json` files, you're ready to proceed to [training](/guides/training) your custom model.

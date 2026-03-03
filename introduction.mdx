@@ -1,0 +1,96 @@
+---
+title: Introduction
+description: Train your own 2000x realtime text-to-speech model with Soprano-Factory
+---
+
+<img
+  className="block dark:hidden"
+  src="https://github.com/user-attachments/assets/f929e484-7a1e-43ea-ba75-83bc79b559de"
+  alt="Soprano Factory Hero"
+/>
+<img
+  className="hidden dark:block"
+  src="https://github.com/user-attachments/assets/f929e484-7a1e-43ea-ba75-83bc79b559de"
+  alt="Soprano Factory Hero"
+/>
+
+## What is Soprano-Factory?
+
+**Soprano-Factory** is a 600-line training script that allows you to train and fine-tune Soprano models with your own data, on your own hardware. You can use Soprano-Factory to add new voices, styles, and languages to the original Soprano model.
+
+Whether you're building custom voice models for production applications or experimenting with new languages and speaking styles, Soprano-Factory provides a straightforward path from dataset to deployed model.
+
+<CardGroup cols={2}>
+  <Card
+    title="Lightning fast training"
+    icon="bolt"
+  >
+    Efficient training pipeline with gradient accumulation and mixed precision support
+  </Card>
+  <Card
+    title="Custom voices & styles"
+    icon="microphone"
+  >
+    Train models with your own audio data to create unique voice characteristics
+  </Card>
+  <Card
+    title="Multi-language support"
+    icon="language"
+  >
+    Extend Soprano to support new languages beyond the base model
+  </Card>
+  <Card
+    title="Minimal setup required"
+    icon="rocket"
+  >
+    Just 600 lines of code with simple LJSpeech-format dataset structure
+  </Card>
+</CardGroup>
+
+## About Soprano
+
+**[Soprano](https://github.com/ekwek1/soprano)** is an ultra-lightweight, on-device text-to-speech (TTS) model designed for expressive, high-fidelity speech synthesis at unprecedented speed.
+
+<Note>
+Soprano-Factory trains models that are fully compatible with the main Soprano inference engine. Once you've trained a custom model, you can use it directly in the [Soprano repository](https://github.com/ekwek1/soprano) by passing your save directory to the `model_path` parameter.
+</Note>
+
+### Soprano key features
+
+- Up to **20x** real-time generation on CPU and **2000x** real-time on GPU
+- **Lossless streaming** with **&lt;250 ms** latency on CPU, **&lt;15 ms** on GPU
+- **&lt;1 GB** memory usage with a compact 80M parameter architecture
+- **Infinite generation length** with automatic text splitting
+- Highly expressive, crystal clear audio generation at **32kHz**
+- Widespread support for CUDA, CPU, and MPS devices on Windows, Linux, and Mac
+- Supports WebUI, CLI, and OpenAI-compatible endpoint for production-ready inference
+
+## Get started
+
+<CardGroup cols={2}>
+  <Card
+    title="Quickstart"
+    icon="play"
+    href="/quickstart"
+  >
+    Get up and running with your first training session in minutes
+  </Card>
+  <Card
+    title="Dataset preparation"
+    icon="database"
+    href="/guides/dataset-preparation"
+  >
+    Learn how to structure your audio data for optimal training results
+  </Card>
+</CardGroup>
+
+<Warning>
+Soprano was not originally designed with fine-tuning in mind. While Soprano-Factory provides a robust training pipeline, results may vary depending on your dataset quality and size. We recommend starting with the example dataset to familiarize yourself with the process.
+</Warning>
+
+## Community and support
+
+- **GitHub Repository**: [ekwek1/soprano-factory](https://github.com/ekwek1/soprano-factory)
+- **Main Soprano Project**: [ekwek1/soprano](https://github.com/ekwek1/soprano)
+- **Pre-trained Model**: [ekwek/Soprano-80M on HuggingFace](https://huggingface.co/ekwek/Soprano-80M)
+- **Live Demo**: [Soprano TTS Demo](https://huggingface.co/spaces/ekwek/Soprano-TTS)

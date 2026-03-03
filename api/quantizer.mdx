@@ -1,0 +1,194 @@
+---
+title: FSQSTE
+description: Finite Scalar Quantization with Straight-Through Estimator
+---
+
+## Overview
+
+The `FSQSTE` class implements Finite Scalar Quantization (FSQ) with a straight-through estimator for gradient flow. FSQ provides a lightweight alternative to vector quantization (VQ) by independently quantizing each dimension to a finite set of levels.
+
+## Class: FSQSTE
+
+### Initialization
+
+```python
+FSQSTE(levels)
+```
+
+<ParamField path="levels" type="list[int]">
+  List of quantization levels for each dimension. For example, `[8, 8, 5, 5, 5]` creates:
+  - 5 dimensions
+  - Codebook size = 8 × 8 × 5 × 5 × 5 = 8000
+  - Each dimension quantized to its respective number of levels
+</ParamField>
+
+### Attributes
+
+<ParamField path="dim" type="int">
+  Number of dimensions (length of `levels` list)
+</ParamField>
+
+<ParamField path="levels" type="torch.Tensor">
+  Tensor of shape `(1, 1, dim)` containing quantization levels per dimension
+</ParamField>
+
+<ParamField path="half_levels" type="torch.Tensor">
+  Half-width for each dimension: `(levels - 1) * (1 - 1e-3) / 2`
+</ParamField>
+
+<ParamField path="_basis" type="torch.Tensor">
+  Basis vector for converting multi-dimensional indices to flat indices
+</ParamField>
+
+## Methods
+
+### forward()
+
+```python
+def forward(self, x: torch.Tensor) -> torch.Tensor:
+```
+
+Applies FSQ quantization with straight-through gradient estimator.
+
+<ParamField path="x" type="torch.Tensor">
+  Input tensor of shape `(..., dim)` with continuous values
+</ParamField>
+
+<ResponseField name="output" type="torch.Tensor">
+  Quantized tensor of shape `(..., dim)` with values in range `[-1, 1]`
+</ResponseField>
+
+**Process:**
+1. Apply tanh activation with learned shift
+2. Scale to quantization levels
+3. Round to nearest integer (with straight-through estimator)
+4. Normalize back to `[-1, 1]`
+
+**Straight-through estimator**: Uses `x + (x.round() - x).detach()` to allow gradients to flow through the rounding operation.
+
+### to_codebook_index()
+
+```python
+def to_codebook_index(self, zhat: torch.Tensor) -> torch.Tensor:
+```
+
+Converts quantized codes to flat codebook indices.
+
+<ParamField path="zhat" type="torch.Tensor">
+  Quantized tensor of shape `(..., dim)` with values in `[-1, 1]`
+</ParamField>
+
+<ResponseField name="indices" type="torch.Tensor">
+  Flat indices of shape `(...)` with integer values in range `[0, product(levels)-1]`
+</ResponseField>
+
+**Process:**
+1. Scale from `[-1, 1]` to `[0, levels-1]`
+2. Compute flat index using basis vector: `sum(level_idx * basis)`
+
+**Example**: For `levels=[8, 8, 5, 5, 5]` and code `[3, 2, 1, 4, 2]`:
+```
+index = 3×1 + 2×8 + 1×64 + 4×320 + 2×1600 = 4563
+```
+
+### from_codebook_index()
+
+```python
+def from_codebook_index(self, indices: torch.Tensor) -> torch.Tensor:
+```
+
+Converts flat codebook indices back to quantized codes.
+
+<ParamField path="indices" type="torch.Tensor">
+  Flat indices of shape `(...)` with integer values
+</ParamField>
+
+<ResponseField name="codes" type="torch.Tensor">
+  Quantized codes of shape `(..., dim)` with values in `[-1, 1]`
+</ResponseField>
+
+**Process:**
+1. Decompose flat index into per-dimension indices using modulo arithmetic
+2. Scale from `[0, levels-1]` to `[-1, 1]`
+
+### indices_to_level_indices()
+
+```python
+def indices_to_level_indices(self, indices: torch.Tensor) -> torch.Tensor:
+```
+
+Decomposes flat indices into per-dimension level indices.
+
+<ParamField path="indices" type="torch.Tensor">
+  Flat indices of shape `(...)`
+</ParamField>
+
+<ResponseField name="level_indices" type="torch.Tensor">
+  Per-dimension indices of shape `(..., dim)` with values in `[0, levels[i]-1]`
+</ResponseField>
+
+## Quantization process
+
+FSQ quantization works as follows:
+
+1. **Input**: Continuous vector `x ∈ ℝ^d`
+2. **Activation**: `h = tanh(x + shift) * half_levels - offset`
+3. **Rounding**: `q = round(h)` (with straight-through gradients)
+4. **Normalization**: `z = q / (levels // 2)` → values in `[-1, 1]`
+5. **Indexing**: Convert to flat index for lookup/storage
+
+### Example with levels=[8, 8, 5, 5, 5]
+
+```python
+import torch
+from encoder.quantizer import FSQSTE
+
+# Initialize quantizer
+quant = FSQSTE(levels=[8, 8, 5, 5, 5])
+
+# Quantize continuous vectors
+x = torch.randn(2, 10, 5)  # (batch, time, dim)
+z = quant(x)  # Quantized values in [-1, 1]
+
+# Convert to indices
+indices = quant.to_codebook_index(z)  # (2, 10) with values 0-7999
+
+# Reconstruct from indices
+z_reconstructed = quant.from_codebook_index(indices)  # (2, 10, 5)
+
+# Check perfect reconstruction
+assert torch.allclose(z, z_reconstructed)
+```
+
+## Advantages of FSQ
+
+- **No codebook collapse**: Unlike VQ-VAE, all codes are used
+- **Deterministic**: No need for exponential moving averages or codebook updates
+- **Lightweight**: No embedding lookup table stored
+- **Gradient flow**: Straight-through estimator allows end-to-end training
+- **Implicit codebook**: Codebook is implicitly defined by quantization levels
+
+## Usage in Soprano
+
+In the Soprano encoder:
+
+```python
+# Encoder outputs 5D continuous vectors
+x = encoder(mel_spec)  # (..., 5)
+
+# FSQ quantizes to discrete codes
+z = fsq(x)  # (..., 5) in [-1, 1]
+
+# Convert to token indices for transformer
+tokens = fsq.to_codebook_index(z)  # (...) in [0, 7999]
+
+# Add offset for special tokens
+tokens = tokens + 3  # Range [3, 8003]
+```
+
+## Implementation notes
+
+- The `1e-3` factor in `half_levels` provides numerical stability
+- The shift and offset terms handle even/odd level counts differently
+- Basis vector uses cumulative product: `[1, L0, L0*L1, L0*L1*L2, ...]`
+- Rounding uses straight-through estimator: gradients pass through as identity
