@@ -1,0 +1,71 @@
+{
+  "projectType": "ai-ml",
+  "projectName": "Soprano-Factory",
+  "projectDescription": "Train and fine-tune your own 2000x realtime text-to-speech models with custom data",
+  "theme": "aspen",
+  "primaryColor": "#8B5CF6",
+  "lightColor": "#A78BFA",
+  "darkColor": "#6D28D9",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Get Started",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "introduction",
+              "quickstart"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Guides",
+        "groups": [
+          {
+            "group": "Training",
+            "pages": [
+              "guides/dataset-preparation",
+              "guides/training",
+              "guides/inference",
+              "guides/configuration"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core Components",
+            "pages": [
+              "api/train",
+              "api/generate-dataset",
+              "api/encoder",
+              "api/quantizer",
+              "api/dataset"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Train custom Soprano TTS models with your own data",
+    "Audio tokenization using Finite Scalar Quantization (FSQ)",
+    "LJSpeech-compatible dataset format",
+    "Mixed precision training with bfloat16",
+    "Automatic audio resampling to 32kHz",
+    "WSD learning rate schedule",
+    "Gradient accumulation and clipping",
+    "Train/validation split generation"
+  ],
+  "publicApiSurface": [
+    "train.py --input-dir <path> --save-dir <path>",
+    "generate_dataset.py --input-dir <path>",
+    "encoder.codec.Encoder",
+    "encoder.quantizer.FSQSTE",
+    "dataset.AudioDataset"
+  ]
+}
