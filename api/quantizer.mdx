@@ -87,7 +87,7 @@ Converts quantized codes to flat codebook indices.
 2. Compute flat index using basis vector: `sum(level_idx * basis)`
 
 **Example**: For `levels=[8, 8, 5, 5, 5]` and code `[3, 2, 1, 4, 2]`:
-```
+```plaintext
 index = 3×1 + 2×8 + 1×64 + 4×320 + 2×1600 = 4563
 ```
 
